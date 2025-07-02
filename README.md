@@ -78,7 +78,31 @@ The MCP Inspector provides a web interface to:
 
 ### Using with MCP Clients
 
-Add to your MCP client configuration:
+#### Integration with Amazon Q CLI
+
+To integrate this MCP server with Amazon Q CLI, configure the MCP server in your AWS configuration:
+
+Create or update the file at `~/.aws/amazonq/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "youtube-enhanced": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/youtube-mcp-server-enhanced", "run", "run_server.py"],
+      "env": {},
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+Replace `/path/to/youtube-mcp-server-enhanced` with the actual path to your repository.
+
+#### Other MCP Clients
+
+For other MCP clients, use the standard configuration:
 
 ```json
 {

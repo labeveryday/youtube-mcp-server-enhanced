@@ -2,8 +2,10 @@
   "mcpServers": {
     "youtube-enhanced": {
       "command": "uv",
-      "args": ["run", "run_server.py"],
-      "cwd": "/path/to/youtube-mcp-server-enhanced"
+      "args": ["--directory", "/path/to/youtube-mcp-server-enhanced", "run", "run_server.py"],
+      "env": {},
+      "disabled": false,
+      "autoApprove": []
     }
   }
 }
