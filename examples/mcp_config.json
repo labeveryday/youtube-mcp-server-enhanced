@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "youtube-enhanced": {
+      "command": "python",
+      "args": ["-m", "youtube_mcp_server.server"],
+      "cwd": "/path/to/youtube-mcp-server-enhanced",
+      "env": {
+        "PYTHONPATH": "/path/to/youtube-mcp-server-enhanced/src"
+      }
+    }
+  }
+}

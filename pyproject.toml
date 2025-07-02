@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "youtube-mcp-server-enhanced"
+version = "0.1.0"
+description = "Enhanced YouTube MCP Server for comprehensive video data extraction and analysis"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Du'An Lightfoot", email = "duanlig@amazon.com"}
+]
+keywords = ["youtube", "mcp", "video-analysis", "data-extraction", "fastmcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "yt-dlp>=2025.6.30",
+    "pydantic>=2.0.0",
+    "asyncio-throttle>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/labeveryday/youtube-mcp-server-enhanced"
+Repository = "https://github.com/labeveryday/youtube-mcp-server-enhanced"
+Issues = "https://github.com/labeveryday/youtube-mcp-server-enhanced/issues"
+
+[project.scripts]
+youtube-mcp-server = "youtube_mcp_server.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/youtube_mcp_server"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/README.md",
+    "/LICENSE",
+    "/CONTRIBUTING.md",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
