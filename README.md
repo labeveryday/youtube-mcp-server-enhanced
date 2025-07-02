@@ -55,7 +55,7 @@ pip install -e ".[dev]"
 
 ```bash
 # Start the MCP server
-python -m youtube_mcp_server.server
+uv run run_server.py
 ```
 
 ### Testing with MCP Inspector
@@ -84,8 +84,8 @@ Add to your MCP client configuration:
 {
   "mcpServers": {
     "youtube-enhanced": {
-      "command": "python",
-      "args": ["-m", "youtube_mcp_server.server"],
+      "command": "uv",
+      "args": ["run", "run_server.py"],
       "cwd": "/path/to/youtube-mcp-server-enhanced"
     }
   }
