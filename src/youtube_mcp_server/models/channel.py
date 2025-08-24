@@ -24,7 +24,7 @@ class ChannelInfo(BaseModel):
     avatar_url: Optional[str] = Field(None, description="Channel avatar/profile picture URL")
     banner_url: Optional[str] = Field(None, description="Channel banner URL")
     stats: Optional[ChannelStats] = Field(None, description="Channel statistics")
-    verified: bool = Field(False, description="Whether channel is verified")
+    verified: Optional[bool] = Field(False, description="Whether channel is verified")
     
     # Additional metadata
     country: Optional[str] = Field(None, description="Channel country")

@@ -1,9 +1,16 @@
 {
   "mcpServers": {
     "youtube-enhanced": {
-      "command": "uv",
-      "args": ["--directory", "/path/to/youtube-mcp-server-enhanced", "run", "run_server.py"],
-      "env": {},
+      "command": "python",
+      "args": ["run_server.py"],
+      "env": {
+        "YOUTUBE_RATE_LIMIT": "1M",
+        "YOUTUBE_MAX_RETRIES": "3",
+        "YOUTUBE_RETRY_DELAY": "1.0",
+        "YOUTUBE_TIMEOUT": "300",
+        "YOUTUBE_ENABLE_CACHE": "true",
+        "YOUTUBE_CACHE_TTL": "3600"
+      },
       "disabled": false,
       "autoApprove": []
     }

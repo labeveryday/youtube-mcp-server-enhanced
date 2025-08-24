@@ -5,14 +5,15 @@ import sys
 import os
 from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
+import time
 
 from mcp.server.fastmcp import FastMCP
 import mcp
 
-from .extractors import YouTubeExtractor
-from .models import VideoInfo, CommentThread, Transcript, ChannelInfo, PlaylistInfo
-from .utils.errors import YouTubeExtractorError, InvalidURLError
-from .utils.url_utils import is_valid_youtube_url, extract_video_id
+from youtube_mcp_server.extractors import YouTubeExtractor
+from youtube_mcp_server.models import VideoInfo, CommentThread, Transcript, ChannelInfo, PlaylistInfo
+from youtube_mcp_server.utils.errors import YouTubeExtractorError, InvalidURLError
+from youtube_mcp_server.utils.url_utils import is_valid_youtube_url, extract_video_id
 
 # Version of this MCP server
 __version__ = "0.1.0"
@@ -53,13 +54,7 @@ logger.addHandler(handler)
 
 # Initialize FastMCP server with proper configuration
 mcp = FastMCP(
-    name="YouTube MCP Server Enhanced",
-    version=__version__,
-    capabilities={
-        "tools": True,
-        "resources": False,
-        "prompts": True
-    }
+    name="YouTube MCP Server Enhanced"
 )
 
 # Global extractor instance
@@ -76,11 +71,25 @@ async def initialize_extractor():
     
     logger.info("Initializing YouTube extractor...")
     
-    # Initialize YouTube extractor with optional rate limiting
+    # Initialize YouTube extractor with configurable options
     rate_limit = os.environ.get("YOUTUBE_RATE_LIMIT")
-    extractor = YouTubeExtractor(rate_limit=rate_limit)
+    max_retries = int(os.environ.get("YOUTUBE_MAX_RETRIES", "3"))
+    retry_delay = float(os.environ.get("YOUTUBE_RETRY_DELAY", "1.0"))
+    timeout = int(os.environ.get("YOUTUBE_TIMEOUT", "300"))
+    enable_cache = os.environ.get("YOUTUBE_ENABLE_CACHE", "true").lower() == "true"
+    cache_ttl = int(os.environ.get("YOUTUBE_CACHE_TTL", "3600"))
+    
+    extractor = YouTubeExtractor(
+        rate_limit=rate_limit,
+        max_retries=max_retries,
+        retry_delay=retry_delay,
+        timeout=timeout,
+        enable_cache=enable_cache,
+        cache_ttl=cache_ttl
+    )
     
     logger.info("✅ Successfully initialized YouTube extractor")
+    logger.info(f"Configuration: retries={max_retries}, timeout={timeout}s, cache={'enabled' if enable_cache else 'disabled'}")
 
 def validate_youtube_url(url: str) -> str:
     """Validate YouTube URL and raise appropriate errors."""
@@ -585,21 +594,269 @@ async def get_playlist_info(url: str) -> Dict[str, Any]:
     except YouTubeExtractorError as e:
         raise RuntimeError(f"Failed to extract playlist info: {str(e)}")
 
+@mcp.tool()
+async def search_youtube(
+    query: str, 
+    search_type: str = "video",
+    max_results: int = 20
+) -> Dict[str, Any]:
+    """Search YouTube for videos, channels, or playlists.
+    
+    Args:
+        query: Search query string
+        search_type: Type of search ("video", "channel", "playlist")
+        max_results: Maximum number of results to return (max 50)
+    
+    Returns:
+        Dictionary containing search results and metadata
+    
+    Examples:
+        - search_youtube("Python programming tutorials", "video", 10)
+        - search_youtube("Tech channels", "channel", 5)
+        - search_youtube("Music playlists", "playlist", 15)
+    """
+    global extractor
+    if not extractor:
+        await initialize_extractor()
+    
+    if not query.strip():
+        raise RuntimeError("Search query is required")
+    
+    if search_type not in ["video", "channel", "playlist"]:
+        raise RuntimeError("Search type must be 'video', 'channel', or 'playlist'")
+    
+    if max_results < 1 or max_results > 50:
+        raise RuntimeError("Max results must be between 1 and 50")
+    
+    try:
+        results = await extractor.search_youtube(query, search_type, max_results)
+        
+        return {
+            "query": query,
+            "search_type": search_type,
+            "max_results": max_results,
+            "result_count": len(results),
+            "results": results
+        }
+        
+    except YouTubeExtractorError as e:
+        raise RuntimeError(f"Search failed: {str(e)}")
+
+@mcp.tool()
+async def get_trending_videos(
+    region: str = "US", 
+    max_results: int = 20
+) -> Dict[str, Any]:
+    """Get trending videos for a specific region.
+    
+    Args:
+        region: Country code (e.g., "US", "GB", "DE", "JP", "IN")
+        max_results: Maximum number of results to return (max 50)
+    
+    Returns:
+        Dictionary containing trending videos and metadata
+    
+    Examples:
+        - get_trending_videos("US", 10)
+        - get_trending_videos("GB", 20)
+        - get_trending_videos("JP", 15)
+    """
+    global extractor
+    if not extractor:
+        await initialize_extractor()
+    
+    if max_results < 1 or max_results > 50:
+        raise RuntimeError("Max results must be between 1 and 50")
+    
+    try:
+        results = await extractor.get_trending_videos(region, max_results)
+        
+        return {
+            "region": region,
+            "max_results": max_results,
+            "result_count": len(results),
+            "trending_videos": results
+        }
+        
+    except YouTubeExtractorError as e:
+        raise RuntimeError(f"Failed to get trending videos: {str(e)}")
+
+@mcp.tool()
+async def batch_extract_urls(
+    urls: List[str], 
+    extract_type: str = "video"
+) -> Dict[str, Any]:
+    """Extract information from multiple YouTube URLs concurrently.
+    
+    Args:
+        urls: List of YouTube URLs to process
+        extract_type: Type of extraction ("video", "channel", "playlist")
+    
+    Returns:
+        Dictionary containing batch extraction results and metadata
+    
+    Examples:
+        - batch_extract_urls(["https://youtube.com/watch?v=...", "https://youtube.com/watch?v=..."], "video")
+        - batch_extract_urls(["https://youtube.com/@channel1", "https://youtube.com/@channel2"], "channel")
+    """
+    global extractor
+    if not extractor:
+        await initialize_extractor()
+    
+    if not urls:
+        raise RuntimeError("URL list cannot be empty")
+    
+    if len(urls) > 20:
+        raise RuntimeError("Maximum 20 URLs allowed per batch request")
+    
+    if extract_type not in ["video", "channel", "playlist"]:
+        raise RuntimeError("Extract type must be 'video', 'channel', or 'playlist'")
+    
+    # Validate all URLs
+    validated_urls = []
+    for url in urls:
+        try:
+            validated_urls.append(validate_youtube_url(url))
+        except InvalidURLError as e:
+            raise RuntimeError(f"Invalid URL in list: {url} - {str(e)}")
+    
+    try:
+        results = await extractor.batch_extract(validated_urls, extract_type)
+        
+        return {
+            "extract_type": extract_type,
+            "total_urls": len(validated_urls),
+            "successful_extractions": len(results),
+            "failed_extractions": len(validated_urls) - len(results),
+            "results": results
+        }
+        
+    except Exception as e:
+        raise RuntimeError(f"Batch extraction failed: {str(e)}")
+
+@mcp.tool()
+async def get_extractor_health() -> Dict[str, Any]:
+    """Get the health status and configuration of the YouTube extractor.
+    
+    Returns:
+        Dictionary containing extractor health information, configuration, and cache statistics
+    
+    Examples:
+        - get_extractor_health()
+    """
+    global extractor
+    if not extractor:
+        await initialize_extractor()
+    
+    try:
+        health_status = extractor.get_health_status()
+        cache_stats = extractor.get_cache_stats()
+        
+        return {
+            "health": health_status,
+            "cache": cache_stats,
+            "server_version": __version__,
+            "mcp_version": mcp_version
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "server_version": __version__,
+            "mcp_version": mcp_version
+        }
+
+@mcp.tool()
+async def clear_extractor_cache() -> Dict[str, Any]:
+    """Clear all cached data from the extractor.
+    
+    Returns:
+        Dictionary confirming cache clearance
+    
+    Examples:
+        - clear_extractor_cache()
+    """
+    global extractor
+    if not extractor:
+        await initialize_extractor()
+    
+    try:
+        extractor.clear_cache()
+        return {
+            "status": "success",
+            "message": "Cache cleared successfully",
+            "timestamp": str(time.time())
+        }
+        
+    except Exception as e:
+        raise RuntimeError(f"Failed to clear cache: {str(e)}")
+
+@mcp.tool()
+async def get_extractor_config() -> Dict[str, Any]:
+    """Get the current configuration of the YouTube extractor.
+    
+    Returns:
+        Dictionary containing extractor configuration parameters
+    
+    Examples:
+        - get_extractor_config()
+    """
+    global extractor
+    if not extractor:
+        await initialize_extractor()
+    
+    try:
+        health_status = extractor.get_health_status()
+        
+        return {
+            "rate_limit": extractor.rate_limit,
+            "max_retries": extractor.max_retries,
+            "retry_delay": extractor.retry_delay,
+            "timeout": extractor.timeout,
+            "enable_cache": extractor.enable_cache,
+            "cache_ttl": extractor.cache_ttl,
+            "yt_dlp_version": health_status.get("yt_dlp_version"),
+            "status": health_status.get("status")
+        }
+        
+    except Exception as e:
+        raise RuntimeError(f"Failed to get configuration: {str(e)}")
+
 def run_server():
     """Run the MCP server."""
     # Print banner
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print(f"  YouTube MCP Server Enhanced v{__version__}")
     print(f"  MCP Version: {mcp_version}")
-    print("=" * 60)
+    print("=" * 70)
     print("  🎥 Comprehensive YouTube data extraction")
     print("  📊 Video analytics and engagement metrics")
     print("  💬 Comment extraction and analysis")
     print("  📝 Transcript processing and search")
     print("  📺 Channel and playlist information")
-    print("=" * 60)
+    print("  🔍 YouTube search functionality")
+    print("  📈 Trending videos by region")
+    print("  ⚡ Batch processing and concurrent extraction")
+    print("  💾 Intelligent caching with TTL")
+    print("  🔄 Automatic retry with exponential backoff")
+    print("  📊 Health monitoring and configuration")
+    print("=" * 70)
+    print("  Available Tools:")
+    print("  • get_video_info() - Extract video metadata and stats")
+    print("  • get_video_comments() - Extract video comments")
+    print("  • get_video_transcript() - Extract video transcripts")
+    print("  • get_channel_info() - Extract channel information")
+    print("  • get_playlist_info() - Extract playlist details")
+    print("  • search_youtube() - Search videos/channels/playlists")
+    print("  • get_trending_videos() - Get trending videos by region")
+    print("  • batch_extract_urls() - Process multiple URLs concurrently")
+    print("  • get_extractor_health() - Monitor extractor health")
+    print("  • get_extractor_config() - View current configuration")
+    print("  • clear_extractor_cache() - Clear cached data")
+    print("=" * 70)
     print("  Server starting...")
-    print("=" * 60 + "\n")
+    print("=" * 70 + "\n")
     
     # Run the FastMCP server
     mcp.run()

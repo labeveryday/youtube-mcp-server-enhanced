@@ -1,320 +1,375 @@
 # YouTube MCP Server Enhanced 🚀
 
-A comprehensive **Model Context Protocol (MCP) server** for YouTube data extraction and analysis. Extract video metadata, comments, transcripts, channel information, and perform engagement analysis - all without requiring API keys!
+A comprehensive Micro-Conversational Processor (MCP) server for extracting and analyzing YouTube data using `yt-dlp`.
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## 🚀 Features
 
-## ✨ Features
+### Core Extraction
+- **Video Information**: Metadata, statistics, engagement metrics
+- **Channel Information**: Stats, subscriber count, view count, verification status
+- **Playlist Details**: Video lists, durations, total views
+- **Comments**: Threaded comments with replies and engagement
+- **Transcripts**: Auto-generated and manual subtitles
 
-### 🎥 Video Analysis
-- **Comprehensive metadata** extraction (title, description, tags, statistics)
-- **Engagement metrics** analysis (like rates, comment rates, benchmarking)
-- **Upload performance** tracking and daily view averages
+### Advanced Capabilities
+- **YouTube Search**: Search for videos, channels, and playlists
+- **Trending Videos**: Get trending content by region
+- **Batch Processing**: Extract from multiple URLs concurrently
+- **Intelligent Caching**: Configurable TTL-based caching
+- **Automatic Retries**: Exponential backoff for failed requests
+- **Health Monitoring**: Real-time extractor status and configuration
 
-### 💬 Comment Extraction
-- **Threaded comments** with replies
-- **Configurable limits** to control extraction volume
-- **Author information** and engagement metrics per comment
+## 🛠️ Installation
 
-### 📝 Transcript Processing
-- **Auto-generated and manual** subtitle extraction
-- **Timestamped entries** with precise timing
-- **Full-text search** within transcripts
-- **Text-at-timestamp** lookup functionality
+### Prerequisites
+- Python 3.10+
+- `yt-dlp` installed and available in PATH
 
-### 📺 Channel & Playlist Analysis
-- **Channel statistics** and metadata
-- **Playlist analysis** with total duration and view counts
-- **Video listing** with individual metrics
-
-### 🔧 Developer-Friendly
-- **Type-safe** with Pydantic models
-- **Async/await** support for better performance
-- **Comprehensive error handling**
-- **Extensible architecture**
-
-## 🚀 Quick Start
-
-### Installation
-
+### Setup
 ```bash
-# Clone the repository
-git clone https://github.com/labeveryday/youtube-mcp-server-enhanced.git
-cd youtube-mcp-server-enhanced
+# Install yt-dlp
+uv add yt-dlp
 
-# Install dependencies
-pip install -e .
-
-# Or install in development mode
-pip install -e ".[dev]"
+# Install all project dependencies
+uv sync
 ```
 
-### Running as MCP Server
+## ⚙️ Configuration
 
+### Environment Variables
 ```bash
-# Start the MCP server
-uv run run_server.py
+# Rate limiting (e.g., "1M" for 1MB/s)
+export YOUTUBE_RATE_LIMIT="1M"
+
+# Retry configuration
+export YOUTUBE_MAX_RETRIES="3"
+export YOUTUBE_RETRY_DELAY="1.0"
+export YOUTUBE_TIMEOUT="300"
+
+# Caching
+export YOUTUBE_ENABLE_CACHE="true"
+export YOUTUBE_CACHE_TTL="3600"
 ```
 
-### Testing with MCP Inspector
+### Default Values
+- **Max Retries**: 3
+- **Retry Delay**: 1.0 seconds (with exponential backoff)
+- **Timeout**: 300 seconds (5 minutes)
+- **Cache TTL**: 3600 seconds (1 hour)
+- **Cache**: Enabled by default
 
-You can test the server using the MCP Inspector tool:
+## 🎯 Available MCP Tools
 
-```bash
-# Test with uv (recommended)
-npx @modelcontextprotocol/inspector uv --directory ./ "run" "run_server.py"
+### Data Extraction
+| Tool | Description | Example |
+|------|-------------|---------|
+| `get_video_info()` | Extract comprehensive video metadata | `get_video_info("https://youtube.com/watch?v=...")` |
+| `get_channel_info()` | Extract channel information and stats | `get_channel_info("https://youtube.com/@channel")` |
+| `get_playlist_info()` | Extract playlist details and video list | `get_playlist_info("https://youtube.com/playlist?list=...")` |
+| `get_video_comments()` | Extract video comments and replies | `get_video_comments("https://youtube.com/watch?v=...", 50)` |
+| `get_video_transcript()` | Extract video transcripts/subtitles | `get_video_transcript("https://youtube.com/watch?v=...")` |
 
-# Or test with direct Python execution
-npx @modelcontextprotocol/inspector python run_server.py
-```
+### Search & Discovery
+| Tool | Description | Example |
+|------|-------------|---------|
+| `search_youtube()` | Search for videos, channels, or playlists | `search_youtube("Python tutorials", "video", 20)` |
+| `get_trending_videos()` | Get trending videos by region | `get_trending_videos("US", 15)` |
 
-The MCP Inspector provides a web interface to:
-- View available tools and their schemas
-- Test tool execution with sample inputs
-- Debug server responses and error handling
-- Validate MCP protocol compliance
+### Analysis & Insights
+| Tool | Description | Example |
+|------|-------------|---------|
+| `analyze_video_engagement()` | Analyze engagement metrics with benchmarks | `analyze_video_engagement("https://youtube.com/watch?v=...")` |
+| `search_transcript()` | Search for text within video transcripts | `search_transcript("https://youtube.com/watch?v=...", "query")` |
 
-### Using with MCP Clients
+### Batch Operations
+| Tool | Description | Example |
+|------|-------------|---------|
+| `batch_extract_urls()` | Process multiple URLs concurrently | `batch_extract_urls(["url1", "url2"], "video")` |
 
-#### Integration with Amazon Q CLI
+### System Management
+| Tool | Description | Example |
+|------|-------------|---------|
+| `get_extractor_health()` | Monitor extractor health and status | `get_extractor_health()` |
+| `get_extractor_config()` | View current configuration | `get_extractor_config()` |
+| `clear_extractor_cache()` | Clear all cached data | `clear_extractor_cache()` |
 
-To integrate this MCP server with Amazon Q CLI, configure the MCP server in your AWS configuration:
+### MCP Prompts
+| Prompt | Description | Example |
+|--------|-------------|---------|
+| `analyze-video` | Comprehensive video analysis with optional comments/transcript | `analyze-video(url, include_comments=true, include_transcript=true)` |
+| `compare-videos` | Compare engagement metrics across multiple videos | `compare-videos([url1, url2, url3])` |
 
-Create or update the file at `~/.aws/amazonq/mcp.json`:
+## 📊 Data Models
 
-```json
+### VideoInfo
+```python
 {
-  "mcpServers": {
-    "youtube-enhanced": {
-      "command": "uv",
-      "args": ["--directory", "/path/to/youtube-mcp-server-enhanced", "run", "run_server.py"],
-      "env": {},
-      "disabled": false,
-      "autoApprove": []
+    "metadata": {
+        "id": "video_id",
+        "title": "Video Title",
+        "description": "Video description...",
+        "uploader": "Channel Name",
+        "uploader_id": "channel_id",
+        "upload_date": "20240101",
+        "tags": ["tag1", "tag2"],
+        "categories": ["Entertainment"],
+        "thumbnail": "https://..."
+    },
+    "statistics": {
+        "view_count": 1000,
+        "like_count": 50,
+        "comment_count": 25,
+        "duration_seconds": 120,
+        "duration_string": "2:00"
+    },
+    "engagement": {
+        "like_to_view_ratio": 0.05,
+        "comment_to_view_ratio": 0.025,
+        "like_rate_percentage": "5.000%",
+        "comment_rate_percentage": "2.500%"
+    },
+    "technical": {
+        "age_limit": 0,
+        "availability": "public",
+        "live_status": "not_live"
     }
-  }
 }
 ```
 
-Replace `/path/to/youtube-mcp-server-enhanced` with the actual path to your repository.
-
-#### Other MCP Clients
-
-For other MCP clients, use the standard configuration:
-
-```json
+### ChannelInfo
+```python
 {
-  "mcpServers": {
-    "youtube-enhanced": {
-      "command": "uv",
-      "args": ["run", "run_server.py"],
-      "cwd": "/path/to/youtube-mcp-server-enhanced"
+    "id": "channel_id",
+    "name": "Channel Name",
+    "url": "https://youtube.com/@channel",
+    "description": "Channel description...",
+    "avatar_url": "https://...",
+    "banner_url": "https://...",
+    "verified": true,
+    "country": "US",
+    "language": "en",
+    "tags": ["tag1", "tag2"],
+    "statistics": {
+        "subscriber_count": 10000,
+        "video_count": 150,
+        "view_count": 500000
     }
-  }
 }
 ```
 
-## 🛠️ Available Tools
-
-### 1. `get_video_info`
-Extract comprehensive video information including metadata and statistics.
-
-**Parameters:**
-- `url` (string, required): YouTube video URL
-
-**Example:**
-```json
+### PlaylistInfo
+```python
 {
-  "name": "get_video_info",
-  "arguments": {
-    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-  }
+    "id": "playlist_id",
+    "title": "Playlist Title",
+    "description": "Playlist description...",
+    "uploader": "Channel Name",
+    "uploader_id": "channel_id",
+    "video_count": 25,
+    "total_duration_seconds": 7200,
+    "total_duration_formatted": "2h 0m",
+    "total_views": 50000,
+    "videos": [
+        {
+            "video_id": "video_id",
+            "title": "Video Title",
+            "uploader": "Channel Name",
+            "duration": 300,
+            "view_count": 2000,
+            "playlist_index": 1
+        }
+    ]
 }
 ```
 
-### 2. `get_video_comments`
-Extract comments from a YouTube video with optional limits.
+## 🔍 Usage Examples
 
-**Parameters:**
-- `url` (string, required): YouTube video URL
-- `max_comments` (integer, optional): Maximum comments to extract (default: 100)
+### Basic Video Analysis
+```python
+# Get comprehensive video information
+video_info = await get_video_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 
-### 3. `get_video_transcript`
-Extract transcript/subtitles from a YouTube video.
+# Extract video comments
+comments = await get_video_comments("https://www.youtube.com/watch?v=dQw4w9WgXcQ", max_comments=50)
 
-**Parameters:**
-- `url` (string, required): YouTube video URL
+# Get video transcript
+transcript = await get_video_transcript("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 
-### 4. `analyze_video_engagement`
-Analyze engagement metrics with industry benchmarks.
-
-**Parameters:**
-- `url` (string, required): YouTube video URL
-
-### 5. `search_transcript`
-Search for specific text within a video's transcript.
-
-**Parameters:**
-- `url` (string, required): YouTube video URL
-- `query` (string, required): Text to search for
-- `case_sensitive` (boolean, optional): Case-sensitive search (default: false)
-
-### 6. `get_channel_info`
-Extract information about a YouTube channel.
-
-**Parameters:**
-- `url` (string, required): YouTube channel URL
-
-### 7. `get_playlist_info`
-Extract information about a YouTube playlist.
-
-**Parameters:**
-- `url` (string, required): YouTube playlist URL
-
-## 📊 Example Outputs
-
-### Video Information
-```markdown
-# Video Information
-
-## Basic Details
-- **Title**: Rick Astley - Never Gonna Give You Up (Official Video)
-- **Channel**: Rick Astley
-- **Duration**: 3:33
-- **Upload Date**: Oct 25, 2009
-
-## Statistics
-- **Views**: 1,670,334,246
-- **Likes**: 18,439,766 (1.104% of views)
-- **Comments**: 2,300,000 (0.138% of views)
-
-## Engagement Analysis
-- **Like Rate**: Excellent (above 1%)
-- **Comment Rate**: Good (above 0.1%)
+# Search within transcript
+results = await search_transcript("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "never gonna")
 ```
 
-### Transcript Search
-```markdown
-# Transcript Search Results
+### Channel and Playlist Analysis
+```python
+# Get channel information
+channel_info = await get_channel_info("https://www.youtube.com/@RickAstleyYT")
 
-## Query: "never gonna"
-- **Matches Found**: 8
-
-## Results
-**1. 00:48**: Never gonna give you up
-**2. 01:02**: Never gonna let you down
-**3. 01:15**: Never gonna run around and desert you
+# Get playlist details
+playlist_info = await get_playlist_info("https://www.youtube.com/playlist?list=...")
 ```
 
-## 🏗️ Architecture
+### Search and Discovery
+```python
+# Search for videos
+results = await search_youtube("Python programming tutorials", "video", 10)
 
+# Get trending videos
+trending = await get_trending_videos("US", 20)
 ```
-youtube-mcp-server-enhanced/
-├── src/youtube_mcp_server/
-│   ├── models/           # Pydantic data models
-│   │   ├── video.py      # Video-related models
-│   │   ├── comment.py    # Comment models
-│   │   ├── transcript.py # Transcript models
-│   │   ├── channel.py    # Channel models
-│   │   └── playlist.py   # Playlist models
-│   ├── extractors/       # Data extraction logic
-│   │   └── youtube_extractor.py
-│   ├── utils/           # Utility functions
-│   │   ├── url_utils.py  # URL parsing utilities
-│   │   ├── format_utils.py # Formatting helpers
-│   │   └── errors.py     # Custom exceptions
-│   └── server.py        # MCP server implementation
-├── tests/               # Test suite
-├── examples/            # Usage examples
-└── run_server.py        # Server entry point
+
+### Advanced Analysis
+```python
+# Analyze video engagement with benchmarks
+engagement = await analyze_video_engagement("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+
+# Compare multiple videos
+comparison = await compare_videos([
+    "https://youtube.com/watch?v=video1",
+    "https://youtube.com/watch?v=video2"
+])
 ```
+
+### Batch Processing
+```python
+# Process multiple URLs concurrently
+results = await batch_extract_urls([
+    "https://youtube.com/watch?v=video1",
+    "https://youtube.com/watch?v=video2"
+], "video")
+```
+
+## ⚡ Performance Features
+
+### Caching
+- **In-Memory Cache**: Configurable TTL-based caching
+- **Cache Keys**: Unique keys for each request type and parameters
+- **Cache Management**: View stats, clear cache, configure TTL
+
+### Retry Logic
+- **Automatic Retries**: Configurable retry attempts
+- **Exponential Backoff**: Increasing delay between retries
+- **Error Handling**: Graceful degradation on failures
+
+### Batch Processing
+- **Concurrent Extraction**: Process multiple URLs simultaneously using asyncio
+- **Async Operations**: Non-blocking I/O for better performance
+- **Result Aggregation**: Combined results with success/failure counts
+
+## 🏥 Health Monitoring
+
+### Health Status
+```python
+health = await get_extractor_health()
+# Returns:
+{
+    "health": {
+        "status": "healthy",
+        "yt_dlp_available": true,
+        "yt_dlp_version": "2025.6.30",
+        "cache": {"enabled": true, "size": 5, "ttl": 3600},
+        "config": {"rate_limit": "1M", "max_retries": 3, "timeout": 300}
+    },
+    "cache": {
+        "enabled": true,
+        "size": 5,
+        "ttl": 3600,
+        "keys": ["key1", "key2"],
+        "total_keys": 5
+    },
+    "server_version": "0.1.0",
+    "mcp_version": "1.0.0"
+}
+```
+
+### Configuration View
+```python
+config = await get_extractor_config()
+# Returns current extractor settings and status
+```
+
+## 🚨 Error Handling
+
+### Retry Strategy
+- **Automatic Retries**: Up to 3 attempts by default
+- **Exponential Backoff**: 1s, 2s, 4s delays
+- **Graceful Degradation**: Return partial results when possible
+
+### Error Types
+- **YouTubeExtractorError**: Extraction-specific errors
+- **InvalidURLError**: Invalid YouTube URL format
+- **RuntimeError**: General execution errors
 
 ## 🔧 Development
 
-### Setting up Development Environment
-
+### Running the Server
 ```bash
-# Clone and install in development mode
-git clone https://github.com/labeveryday/youtube-mcp-server-enhanced.git
-cd youtube-mcp-server-enhanced
-pip install -e ".[dev]"
+# Start the MCP server
+python run_server.py
 
-# Install pre-commit hooks
-pre-commit install
-
-# Run tests
-pytest
-
-# Format code
-black src/ tests/
-isort src/ tests/
-
-# Type checking
-mypy src/
+# Or using the module directly
+python -m src.youtube_mcp_server.server
 ```
 
-### Running Tests
-
+### Testing
 ```bash
 # Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=youtube_mcp_server
+uv run pytest tests/
 
 # Run specific test file
-pytest tests/test_extractor.py
+uv run pytest tests/test_basic.py
+
+# Run with coverage
+uv run pytest --cov=src tests/
 ```
 
-## 📋 Requirements
+## 📈 Use Cases
 
-- **Python 3.10+**
-- **yt-dlp** - YouTube data extraction
-- **mcp** - Model Context Protocol support
-- **pydantic** - Data validation and serialization
-- **asyncio-throttle** - Rate limiting support
+### Content Analysis
+- **Video Performance**: Analyze view counts, engagement metrics
+- **Channel Growth**: Track subscriber and view count trends
+- **Content Discovery**: Find trending and popular content
+
+### Research & Analytics
+- **Market Research**: Analyze competitor channels and content
+- **Trend Analysis**: Identify trending topics and content types
+- **Audience Insights**: Understand viewer preferences and behavior
+
+### Content Management
+- **Playlist Organization**: Manage and analyze video collections
+- **Comment Moderation**: Extract and analyze user feedback
+- **Transcript Analysis**: Process and search video content
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development Workflow
-
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+2. Create a feature branch
 3. Make your changes
 4. Add tests for new functionality
-5. Ensure all tests pass (`pytest`)
-6. Format your code (`black`, `isort`)
-7. Commit your changes (`git commit -m 'Add amazing feature'`)
-8. Push to the branch (`git push origin feature/amazing-feature`)
-9. Open a Pull Request
+5. Submit a pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
-- **yt-dlp** team for the excellent YouTube extraction library
-- **MCP** team for the Model Context Protocol specification
-- **Pydantic** team for the fantastic data validation library
+- **yt-dlp**: The core YouTube extraction engine
+- **FastMCP**: The MCP server framework
+- **Pydantic**: Data validation and serialization
 
 ## 📞 Support
 
 - **Issues**: [GitHub Issues](https://github.com/labeveryday/youtube-mcp-server-enhanced/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/labeveryday/youtube-mcp-server-enhanced/discussions)
-- **Email**: duanlig@amazon.com
+- **Email**: info@labeveryday.com
 
 ## 🗺️ Roadmap
 
-- [ ] **Batch processing** for multiple videos
-- [ ] **Caching layer** for improved performance
+- [x] **Batch processing** for multiple videos
+- [x] **Caching layer** for improved performance
+- [x] **Advanced analytics** (engagement analysis, benchmarks)
+- [x] **Rate limiting** and quota management
 - [ ] **Export functionality** (JSON, CSV, etc.)
-- [ ] **Advanced analytics** (sentiment analysis, trending topics)
-- [ ] **Rate limiting** and quota management
 - [ ] **WebSocket support** for real-time updates
 - [ ] **Integration examples** with popular MCP clients
 
