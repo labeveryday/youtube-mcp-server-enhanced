@@ -73,10 +73,29 @@ class YouTubeExtractor:
         self.enable_cache = enable_cache
         self.cache_ttl = cache_ttl
         
-        self._base_cmd = ["yt-dlp"]
+        # Determine base command (yt-dlp directly or via uv)
+        try:
+            subprocess.run(["yt-dlp", "--version"], capture_output=True, check=True, timeout=5)
+            self._base_ytdlp_cmd = ["yt-dlp"]
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # Fall back to uv run if yt-dlp not in PATH
+            self._base_ytdlp_cmd = ["uv", "run", "yt-dlp"]
         
+        # Build full command with all options
+        self._base_cmd = self._base_ytdlp_cmd.copy()
+        
+        # Add rate limiting and other robust options
         if rate_limit:
             self._base_cmd.extend(["--limit-rate", rate_limit])
+        
+        # Add sleep interval to avoid rate limiting  
+        self._base_cmd.extend(["--sleep-interval", "2"])
+        
+        # Add user agent to avoid detection
+        self._base_cmd.extend([
+            "--user-agent", 
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ])
         
         # Verify yt-dlp is available
         self._verify_yt_dlp()
@@ -85,7 +104,7 @@ class YouTubeExtractor:
         """Verify that yt-dlp is available and working."""
         try:
             result = subprocess.run(
-                self._base_cmd + ["--version"],
+                self._base_ytdlp_cmd + ["--version"],
                 capture_output=True,
                 text=True,
                 timeout=10
@@ -156,7 +175,24 @@ class YouTubeExtractor:
             
             if result.stdout.strip():
                 # Handle multiple JSON lines (one per line)
-                lines = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
+                # Filter out non-JSON lines (warnings, etc.)
+                lines = []
+                for line in result.stdout.strip().split('\n'):
+                    line = line.strip()
+                    if line and (line.startswith('{') or line.startswith('[')):
+                        # Try to validate it's actually JSON
+                        try:
+                            json.loads(line)
+                            lines.append(line)
+                        except json.JSONDecodeError:
+                            # Skip invalid JSON lines
+                            continue
+                
+                if not lines:
+                    # Log the full stdout for debugging
+                    logger.debug(f"yt-dlp stdout: {result.stdout}")
+                    logger.debug(f"yt-dlp stderr: {result.stderr}")
+                    raise YouTubeExtractorError("No valid JSON data returned from yt-dlp")
                 
                 if len(lines) == 1:
                     # Single JSON object
@@ -177,6 +213,38 @@ class YouTubeExtractor:
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse error for {url}: {e}")
             raise YouTubeExtractorError(f"Failed to parse JSON: {e}") from e
+    
+    def _run_yt_dlp_file_based(self, url: str, options: List[str]) -> None:
+        """
+        Run yt-dlp for file-based operations (no JSON parsing expected).
+        
+        Args:
+            url: YouTube URL to process
+            options: Additional yt-dlp options
+            
+        Raises:
+            YouTubeExtractorError: If extraction fails
+        """
+        cmd = self._base_cmd + options + [url]
+        
+        try:
+            logger.debug(f"Running yt-dlp (file-based): {' '.join(cmd)}")
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                check=True,
+                timeout=self.timeout
+            )
+            logger.debug(f"yt-dlp completed successfully for {url}")
+                
+        except subprocess.CalledProcessError as e:
+            error_msg = f"yt-dlp failed: {e.stderr}"
+            logger.error(f"yt-dlp error for {url}: {error_msg}")
+            raise YouTubeExtractorError(error_msg) from e
+        except subprocess.TimeoutExpired:
+            logger.error(f"yt-dlp timeout for {url}")
+            raise YouTubeExtractorError("Extraction timed out")
     
     @lru_cache(maxsize=100)
     def _get_cached_data(self, cache_key: str) -> Optional[Union[Dict[str, Any], List[Dict[str, Any]]]]:
@@ -308,17 +376,23 @@ class YouTubeExtractor:
     async def get_video_comments(
         self, 
         url: str, 
-        max_comments: Optional[int] = None
+        max_comments: Optional[int] = None,
+        auto_limit: bool = True
     ) -> List[CommentThread]:
         """
-        Extract video comments.
+        Extract video comments with smart rate limiting.
         
         Args:
             url: YouTube video URL
-            max_comments: Maximum number of comments to extract (note: yt-dlp doesn't support limiting)
+            max_comments: Maximum number of comments to extract (None for all available)
+            auto_limit: If True, automatically retry with lower limits if rate limited
             
         Returns:
             List of comment threads
+            
+        Note:
+            Large comment counts (>50) may fail due to YouTube rate limiting.
+            When auto_limit=True, it will retry with progressively smaller limits.
         """
         cache_key = f"comments:{url}:{max_comments or 'all'}"
         cached_data = self._get_cached_data(cache_key)
@@ -326,39 +400,61 @@ class YouTubeExtractor:
         if cached_data:
             return cached_data
         
-        options = ["--write-comments", "--skip-download", "--dump-json"]
+        # Comments require file-based extraction, not stdout JSON
+        options = ["--write-info-json", "--write-comments", "--skip-download"]
         
-        # Note: yt-dlp doesn't have --max-comments option
-        # We'll limit the results after extraction if needed
-        
-        # Use temporary directory for comment files
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir) / "comments"
             options.extend(["--output", str(temp_path) + ".%(ext)s"])
             
-            # Run extraction
-            self._run_yt_dlp_with_retry(url, options)
-            
-            # Look for comment files
-            comment_files = list(Path(temp_dir).glob("*.info.json"))
-            
-            if not comment_files:
-                return []
-            
-            # Parse comment data
-            comments = []
-            for comment_file in comment_files:
-                with open(comment_file, 'r', encoding='utf-8') as f:
+            try:
+                self._run_yt_dlp_file_based(url, options)
+                
+                # Look for info.json file with comments
+                info_files = list(Path(temp_dir).glob("*.info.json"))
+                
+                if not info_files:
+                    return []
+                
+                # Parse comment data from info.json
+                with open(info_files[0], 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    comments.extend(self._parse_comments(data))
-            
-            # Limit results if requested
-            if max_comments and len(comments) > max_comments:
-                comments = comments[:max_comments]
-            
-            # Cache the result
-            self._set_cached_data(cache_key, comments)
-            return comments
+                
+                threads = self._parse_comments(data)
+                
+                # Apply max_comments limit if specified
+                if max_comments and len(threads) > max_comments:
+                    threads = threads[:max_comments]
+                
+                # Cache the result
+                self._set_cached_data(cache_key, threads)
+                return threads
+                
+            except Exception as e:
+                error_msg = str(e)
+                
+                # Check if it's a rate limiting error
+                if auto_limit and max_comments and max_comments > 20 and ("403" in error_msg or "Forbidden" in error_msg):
+                    # Try with progressively smaller limits
+                    fallback_limits = [20, 10, 5]
+                    
+                    for fallback_limit in fallback_limits:
+                        if fallback_limit < max_comments:
+                            logger.warning(f"Rate limited with {max_comments} comments, trying {fallback_limit}")
+                            try:
+                                return await self.get_video_comments(url, fallback_limit, auto_limit=False)
+                            except Exception:
+                                continue
+                    
+                    # If all fallbacks fail, raise a helpful error
+                    raise YouTubeExtractorError(
+                        f"Unable to extract {max_comments} comments due to YouTube rate limiting. "
+                        f"Try using a smaller number (≤20 recommended). "
+                        f"For large-scale comment extraction, consider using batch processing."
+                    )
+                
+                logger.error(f"Failed to extract comments for {url}: {e}")
+                return []
     
     def _parse_comments(self, data: Dict[str, Any]) -> List[CommentThread]:
         """Parse comment data from yt-dlp output."""
@@ -430,7 +526,7 @@ class YouTubeExtractor:
             options.extend(["--output", str(temp_path) + ".%(ext)s"])
             
             try:
-                self._run_yt_dlp_with_retry(url, options)
+                self._run_yt_dlp_file_based(url, options)
                 
                 # Look for subtitle files
                 sub_files = list(Path(temp_dir).glob("*.json3"))
@@ -509,88 +605,68 @@ class YouTubeExtractor:
         if cached_data:
             return ChannelInfo.from_yt_dlp_data(cached_data)
         
-        # First try to get actual channel info (not playlist data)
-        options = ["--dump-json", "--no-download"]
+        # Use proper channel metadata extraction (not video list)
+        options = ["--flat-playlist", "--dump-single-json", "--playlist-items", "0,0"]
         
         try:
             data = self._run_yt_dlp_with_retry(url, options)
             
-            # Handle different response formats
-            if isinstance(data, list) and len(data) > 0:
-                # Channel with videos - use first video's channel info
-                video_data = data[0]
-                
-                # Extract channel info from video data
-                channel_id = video_data.get("uploader_id", video_data.get("channel_id", ""))
-                channel_name = video_data.get("uploader", video_data.get("channel", ""))
-                channel_url = video_data.get("uploader_url", video_data.get("channel_url", ""))
-                
-                # Get actual channel statistics if available
-                stats = None
-                if video_data.get("channel_follower_count") is not None:
-                    stats = ChannelStats(
-                        subscriber_count=video_data.get("channel_follower_count"),
-                        video_count=video_data.get("playlist_count", 0),
-                        view_count=None  # Will calculate below
-                    )
-                elif video_data.get("playlist_count") is not None:
-                    # Create stats with just video count if subscriber count not available
-                    stats = ChannelStats(
-                        subscriber_count=None,
-                        video_count=video_data.get("playlist_count", 0),
-                        view_count=None  # Will calculate below
-                    )
-                
-                # Calculate channel view count by summing recent video views
-                channel_view_count = await self._calculate_channel_view_count(url)
-                if stats:
-                    stats.view_count = channel_view_count
-                
-                channel_info = ChannelInfo(
-                    id=channel_id,
-                    name=channel_name,
-                    url=channel_url,
-                    description=video_data.get("description", ""),
-                    avatar_url=video_data.get("uploader_avatar", ""),
-                    banner_url=video_data.get("uploader_banner", ""),
-                    verified=bool(video_data.get("channel_is_verified", False)),
-                    country=video_data.get("uploader_country", ""),
-                    language=video_data.get("uploader_language", ""),
-                    tags=video_data.get("uploader_tags", []),
-                    stats=stats
-                )
-                
-                # Cache the result
-                self._set_cached_data(cache_key, data)
-                return channel_info
-            else:
-                # Direct channel info
+            # Handle response from --flat-playlist --dump-single-json
+            if isinstance(data, dict):
+                # Direct channel metadata from flat-playlist extraction
                 channel_data = data
                 
+                # Extract thumbnails for avatar and banner
+                avatar_url = ""
+                banner_url = ""
+                if channel_data.get("thumbnails"):
+                    thumbnails = channel_data["thumbnails"]
+                    # Look for avatar (usually square format)
+                    for thumb in thumbnails:
+                        if thumb.get("id") == "avatar_uncropped" or "avatar" in thumb.get("id", ""):
+                            avatar_url = thumb.get("url", "")
+                            break
+                    # Look for banner (usually wide format)
+                    for thumb in thumbnails:
+                        if thumb.get("id") == "banner_uncropped" or "banner" in thumb.get("id", ""):
+                            banner_url = thumb.get("url", "")
+                            break
+                    # Fallback to largest square and largest wide thumbnail
+                    if not avatar_url:
+                        for thumb in sorted(thumbnails, key=lambda x: x.get("width", 0) * x.get("height", 0), reverse=True):
+                            if thumb.get("width") == thumb.get("height"):  # Square avatar
+                                avatar_url = thumb.get("url", "")
+                                break
+                    if not banner_url:
+                        for thumb in sorted(thumbnails, key=lambda x: x.get("width", 0), reverse=True):
+                            ratio = (thumb.get("width", 1) / thumb.get("height", 1)) if thumb.get("height") else 1
+                            if ratio > 2:  # Wide banner
+                                banner_url = thumb.get("url", "")
+                                break
+                
+                # Get statistics
                 stats = None
-                if channel_data.get("channel_follower_count") is not None:
+                subscriber_count = channel_data.get("channel_follower_count")
+                video_count = channel_data.get("playlist_count", 0)
+                
+                if subscriber_count is not None or video_count > 0:
                     stats = ChannelStats(
-                        subscriber_count=channel_data.get("channel_follower_count"),
-                        video_count=channel_data.get("video_count"),
-                        view_count=None  # Will calculate below
+                        subscriber_count=subscriber_count,
+                        video_count=video_count,
+                        view_count=channel_data.get("view_count")  # Usually not available for channels
                     )
                 
-                # Calculate channel view count
-                channel_view_count = await self._calculate_channel_view_count(url)
-                if stats:
-                    stats.view_count = channel_view_count
-                
                 channel_info = ChannelInfo(
-                    id=channel_data.get("uploader_id", channel_data.get("channel_id", "")),
-                    name=channel_data.get("uploader", channel_data.get("channel", "")),
-                    url=channel_data.get("uploader_url", channel_data.get("channel_url", "")),
+                    id=channel_data.get("uploader_id", channel_data.get("channel_id", channel_data.get("id", ""))),
+                    name=channel_data.get("uploader", channel_data.get("channel", channel_data.get("title", ""))),
+                    url=channel_data.get("uploader_url", channel_data.get("channel_url", channel_data.get("webpage_url", ""))),
                     description=channel_data.get("description", ""),
-                    avatar_url=channel_data.get("uploader_avatar", channel_data.get("channel_avatar", "")),
-                    banner_url=channel_data.get("uploader_banner", channel_data.get("channel_banner", "")),
-                    verified=bool(channel_data.get("uploader_verified", False)),
-                    country=channel_data.get("uploader_country", channel_data.get("channel_country", "")),
-                    language=channel_data.get("uploader_language", channel_data.get("channel_language", "")),
-                    tags=channel_data.get("uploader_tags", channel_data.get("channel_tags", [])),
+                    avatar_url=avatar_url,
+                    banner_url=banner_url,
+                    verified=bool(channel_data.get("channel_is_verified", False)),
+                    country="",  # Usually not available in flat-playlist
+                    language="",  # Usually not available in flat-playlist  
+                    tags=channel_data.get("tags", []),
                     stats=stats
                 )
                 
@@ -824,7 +900,7 @@ class YouTubeExtractor:
         try:
             # Check yt-dlp availability
             version_result = subprocess.run(
-                self._base_cmd + ["--version"],
+                self._base_ytdlp_cmd + ["--version"],
                 capture_output=True,
                 text=True,
                 timeout=5

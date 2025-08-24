@@ -118,3 +118,49 @@ def extract_channel_id(url: str) -> Optional[str]:
             return match.group(1)
     
     return None
+
+
+def normalize_channel_url(url: str) -> Optional[str]:
+    """
+    Normalize YouTube channel URL to modern @handle format.
+    
+    Converts various channel URL formats to the modern @handle format:
+    - youtube.com/ChannelName -> youtube.com/@ChannelName
+    - youtube.com/c/ChannelName -> youtube.com/@ChannelName  
+    - youtube.com/user/ChannelName -> youtube.com/@ChannelName
+    - youtube.com/channel/UCxxx -> youtube.com/channel/UCxxx (keep channel ID format)
+    
+    Args:
+        url: YouTube channel URL to normalize
+        
+    Returns:
+        Normalized channel URL or original URL if no normalization needed
+    """
+    if not is_valid_youtube_url(url):
+        return None
+    
+    # Pattern to match old-style channel URLs without @ symbol
+    # Matches: youtube.com/ChannelName (but not youtube.com/@ChannelName, youtube.com/watch, etc.)
+    old_format_pattern = r'(https?://)?(www\.)?youtube\.com/([a-zA-Z0-9_-]+)(?:/.*)?$'
+    match = re.match(old_format_pattern, url)
+    
+    if match:
+        channel_name = match.group(3)
+        # Don't convert if it's already a known path (watch, playlist, etc.) or starts with UC (channel ID)
+        if channel_name not in ['watch', 'playlist', 'embed', 'v', 'shorts', 'live', 'channel', 'c', 'user'] and not channel_name.startswith('UC'):
+            return f"https://www.youtube.com/@{channel_name}"
+    
+    # Handle /c/ format
+    if '/c/' in url:
+        channel_name = extract_channel_id(url)
+        if channel_name:
+            return f"https://www.youtube.com/@{channel_name}"
+    
+    # Handle /user/ format  
+    if '/user/' in url:
+        channel_name = extract_channel_id(url)
+        if channel_name:
+            return f"https://www.youtube.com/@{channel_name}"
+    
+    # Return original URL if no normalization needed
+    return url

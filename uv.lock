@@ -873,6 +873,7 @@ dependencies = [
     { name = "asyncio-throttle" },
     { name = "mcp" },
     { name = "pydantic" },
+    { name = "python-dotenv" },
     { name = "yt-dlp" },
 ]
 
@@ -897,6 +898,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
+    { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "yt-dlp", specifier = ">=2025.6.30" },
 ]
 provides-extras = ["dev"]

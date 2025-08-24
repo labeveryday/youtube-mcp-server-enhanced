@@ -22,39 +22,110 @@ A comprehensive Micro-Conversational Processor (MCP) server for extracting and a
 ## 🛠️ Installation
 
 ### Prerequisites
-- Python 3.10+
-- `yt-dlp` installed and available in PATH
+- **Python 3.10+**
+- **[uv](https://docs.astral.sh/uv/) package manager** (required)
+- `yt-dlp` (automatically installed via uv)
+
+**⚠️ Important: This project requires `uv` to run properly. Install it first:**
+
+```bash
+# Install uv (macOS/Linux)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Or via Homebrew (macOS)
+brew install uv
+
+# Or via pip
+pip install uv
+```
 
 ### Setup
 ```bash
-# Install yt-dlp
-uv add yt-dlp
+# Clone the repository
+git clone <repository-url>
+cd youtube-mcp-server-enhanced
 
-# Install all project dependencies
+# Install yt-dlp and all dependencies
+uv add yt-dlp
 uv sync
+
+# Verify installation
+uv run yt-dlp --version
 ```
 
 ## ⚙️ Configuration
 
-### Environment Variables
+### Environment Variables (.env file)
+Create a `.env` file in the project root to configure the server:
+
 ```bash
-# Rate limiting (e.g., "1M" for 1MB/s)
-export YOUTUBE_RATE_LIMIT="1M"
+# Copy the example file
+cp .env.example .env
+
+# Edit with your preferred settings
+nano .env
+```
+
+Example `.env` configuration:
+```bash
+# Rate limiting (e.g., "500K" for 500KB/s, "1M" for 1MB/s)
+YOUTUBE_RATE_LIMIT=500K
 
 # Retry configuration
-export YOUTUBE_MAX_RETRIES="3"
-export YOUTUBE_RETRY_DELAY="1.0"
-export YOUTUBE_TIMEOUT="300"
+YOUTUBE_MAX_RETRIES=5
+YOUTUBE_RETRY_DELAY=2.0
+YOUTUBE_TIMEOUT=600
 
 # Caching
-export YOUTUBE_ENABLE_CACHE="true"
-export YOUTUBE_CACHE_TTL="3600"
+YOUTUBE_ENABLE_CACHE=true
+YOUTUBE_CACHE_TTL=3600
+
+# Logging level
+LOG_LEVEL=INFO
+```
+
+### MCP Client Configuration
+
+#### Claude Desktop (macOS)
+Add to your `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "youtube-mcp-server": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/path/to/youtube-mcp-server-enhanced",
+        "python",
+        "-m",
+        "src.youtube_mcp_server.server"
+      ],
+      "env": {
+        "YOUTUBE_RATE_LIMIT": "500K",
+        "YOUTUBE_MAX_RETRIES": "5",
+        "YOUTUBE_RETRY_DELAY": "2.0",
+        "YOUTUBE_TIMEOUT": "600",
+        "YOUTUBE_ENABLE_CACHE": "true",
+        "YOUTUBE_CACHE_TTL": "3600"
+      }
+    }
+  }
+}
+```
+
+#### Other MCP Clients
+For other MCP clients, configure the server command as:
+```bash
+uv run --directory /path/to/youtube-mcp-server-enhanced python -m src.youtube_mcp_server.server
 ```
 
 ### Default Values
-- **Max Retries**: 3
-- **Retry Delay**: 1.0 seconds (with exponential backoff)
-- **Timeout**: 300 seconds (5 minutes)
+- **Rate Limit**: None (uses YouTube's default)
+- **Max Retries**: 5 (increased from 3 for better reliability)
+- **Retry Delay**: 2.0 seconds (with exponential backoff)
+- **Timeout**: 600 seconds (10 minutes)
 - **Cache TTL**: 3600 seconds (1 hour)
 - **Cache**: Enabled by default
 
@@ -64,7 +135,7 @@ export YOUTUBE_CACHE_TTL="3600"
 | Tool | Description | Example |
 |------|-------------|---------|
 | `get_video_info()` | Extract comprehensive video metadata | `get_video_info("https://youtube.com/watch?v=...")` |
-| `get_channel_info()` | Extract channel information and stats | `get_channel_info("https://youtube.com/@channel")` |
+| `get_channel_info()` | Extract channel information and stats (supports multiple URL formats) | `get_channel_info("https://youtube.com/@channel")` or `get_channel_info("https://youtube.com/ChannelName")` |
 | `get_playlist_info()` | Extract playlist details and video list | `get_playlist_info("https://youtube.com/playlist?list=...")` |
 | `get_video_comments()` | Extract video comments and replies | `get_video_comments("https://youtube.com/watch?v=...", 50)` |
 | `get_video_transcript()` | Extract video transcripts/subtitles | `get_video_transcript("https://youtube.com/watch?v=...")` |
@@ -290,8 +361,9 @@ config = await get_extractor_config()
 ## 🚨 Error Handling
 
 ### Retry Strategy
-- **Automatic Retries**: Up to 3 attempts by default
-- **Exponential Backoff**: 1s, 2s, 4s delays
+- **Automatic Retries**: Up to 5 attempts by default (configurable)
+- **Exponential Backoff**: 2s, 4s, 8s delays
+- **Rate Limiting**: 500KB/s limit with 2-second sleep intervals
 - **Graceful Degradation**: Return partial results when possible
 
 ### Error Types
@@ -299,15 +371,35 @@ config = await get_extractor_config()
 - **InvalidURLError**: Invalid YouTube URL format
 - **RuntimeError**: General execution errors
 
+### Troubleshooting
+
+#### Rate Limiting Issues
+If you encounter rate limiting:
+1. Increase sleep intervals in `.env`: `YOUTUBE_RETRY_DELAY=3.0`
+2. Lower rate limit: `YOUTUBE_RATE_LIMIT=300K`
+3. Reduce concurrent requests
+
+#### yt-dlp Not Working
+1. Ensure uv is installed: `uv --version`
+2. Verify yt-dlp installation: `uv run yt-dlp --version`
+3. The server automatically uses `uv run yt-dlp` if direct access fails
+
+#### MCP Connection Issues
+1. Restart your MCP client after code changes
+2. Check logs for specific error messages
+3. Verify environment variables are loaded correctly
+
 ## 🔧 Development
 
 ### Running the Server
-```bash
-# Start the MCP server
-python run_server.py
+**⚠️ Always use `uv run` to ensure proper dependency management:**
 
-# Or using the module directly
-python -m src.youtube_mcp_server.server
+```bash
+# Start the MCP server (recommended)
+uv run python -m src.youtube_mcp_server.server
+
+# Or if you have a run_server.py file
+uv run python run_server.py
 ```
 
 ### Testing

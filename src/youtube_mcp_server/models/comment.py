@@ -3,8 +3,8 @@ Comment-related data models for YouTube content.
 """
 
 from datetime import datetime
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import List, Optional, Union
+from pydantic import BaseModel, Field, field_validator
 
 
 class Comment(BaseModel):
@@ -15,10 +15,18 @@ class Comment(BaseModel):
     author: str = Field(description="Comment author name")
     author_id: Optional[str] = Field(None, description="Author channel ID")
     like_count: int = Field(0, description="Number of likes on comment")
-    timestamp: Optional[str] = Field(None, description="Comment timestamp")
+    timestamp: Optional[Union[str, int]] = Field(None, description="Comment timestamp")
     is_pinned: bool = Field(False, description="Whether comment is pinned")
     is_favorited: bool = Field(False, description="Whether comment is favorited by creator")
     parent_id: Optional[str] = Field(None, description="Parent comment ID (for replies)")
+    
+    @field_validator('timestamp')
+    @classmethod
+    def convert_timestamp(cls, v):
+        """Convert integer timestamp to string if needed."""
+        if isinstance(v, int):
+            return str(v)
+        return v
 
 
 class CommentThread(BaseModel):

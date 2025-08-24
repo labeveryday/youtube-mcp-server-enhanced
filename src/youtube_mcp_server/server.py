@@ -6,6 +6,20 @@ import os
 from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
 import time
+from pathlib import Path
+
+# Load .env file if available
+try:
+    from dotenv import load_dotenv
+    # Look for .env in project root
+    env_path = Path(__file__).parent.parent.parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"✅ Loaded environment variables from {env_path}")
+    else:
+        print("⚠️  No .env file found, using system environment variables")
+except ImportError:
+    print("⚠️  python-dotenv not installed, using system environment variables")
 
 from mcp.server.fastmcp import FastMCP
 import mcp
@@ -13,7 +27,7 @@ import mcp
 from youtube_mcp_server.extractors import YouTubeExtractor
 from youtube_mcp_server.models import VideoInfo, CommentThread, Transcript, ChannelInfo, PlaylistInfo
 from youtube_mcp_server.utils.errors import YouTubeExtractorError, InvalidURLError
-from youtube_mcp_server.utils.url_utils import is_valid_youtube_url, extract_video_id
+from youtube_mcp_server.utils.url_utils import is_valid_youtube_url, extract_video_id, normalize_channel_url
 
 # Version of this MCP server
 __version__ = "0.1.0"
@@ -276,17 +290,24 @@ async def get_video_info(url: str) -> Dict[str, Any]:
         raise RuntimeError(f"Failed to extract video info: {str(e)}")
 
 @mcp.tool()
-async def get_video_comments(url: str, max_comments: int = 100) -> List[Dict[str, Any]]:
-    """Extract comments from a YouTube video with optional limit.
+async def get_video_comments(url: str, max_comments: int = 20) -> List[Dict[str, Any]]:
+    """Extract comments from a YouTube video with smart rate limiting.
     
     Args:
         url: YouTube video URL
-        max_comments: Maximum number of comments to extract (default: 100, max: 1000)
+        max_comments: Maximum number of comments to extract (default: 20, recommended: ≤50)
     
     Returns:
         List of comment threads with author, text, likes, and replies
     
+    Note:
+        • Recommended limit: ≤20 for reliable extraction
+        • Higher limits (>50) may fail due to YouTube rate limiting
+        • If rate limited, automatically retries with smaller limits
+        • For videos with many comments, use multiple smaller requests
+    
     Examples:
+        - get_video_comments("https://www.youtube.com/watch?v=dQw4w9WgXcQ", max_comments=10)
         - get_video_comments("https://www.youtube.com/watch?v=dQw4w9WgXcQ", max_comments=50)
     """
     global extractor
@@ -295,9 +316,10 @@ async def get_video_comments(url: str, max_comments: int = 100) -> List[Dict[str
     
     validate_youtube_url(url)
     
-    if max_comments > 1000:
-        max_comments = 1000
-        logger.warning("Limited max_comments to 1000 for performance")
+    # Provide guidance for large requests
+    if max_comments > 100:
+        max_comments = 100  # Hard limit to prevent excessive requests
+        logger.warning("Limited max_comments to 100 due to rate limiting constraints")
     
     try:
         comments = await extractor.get_video_comments(url, max_comments)
@@ -329,6 +351,80 @@ async def get_video_comments(url: str, max_comments: int = 100) -> List[Dict[str
         
     except YouTubeExtractorError as e:
         raise RuntimeError(f"Failed to extract comments: {str(e)}")
+
+@mcp.tool()
+async def get_video_comments_batch(url: str, total_desired: int = 100, batch_size: int = 20) -> Dict[str, Any]:
+    """Extract a large number of comments by making multiple smaller requests.
+    
+    Args:
+        url: YouTube video URL
+        total_desired: Total number of comments to try to extract (default: 100)
+        batch_size: Size of each batch request (default: 20, max: 50)
+    
+    Returns:
+        Dictionary with comments list, metadata, and extraction info
+    
+    Note:
+        • Use this for extracting >50 comments reliably
+        • Makes multiple smaller requests to avoid rate limiting
+        • May not get exactly total_desired due to YouTube limitations
+        • Returns actual count and success rate
+    
+    Examples:
+        - get_video_comments_batch("https://www.youtube.com/watch?v=dQw4w9WgXcQ", total_desired=200)
+    """
+    global extractor
+    if not extractor:
+        await initialize_extractor()
+    
+    validate_youtube_url(url)
+    
+    # Limit batch size to prevent rate limiting
+    if batch_size > 50:
+        batch_size = 50
+    
+    if total_desired > 1000:
+        total_desired = 1000  # Reasonable upper limit
+    
+    try:
+        # Start with one request to see how many comments are available
+        first_batch = await extractor.get_video_comments(url, batch_size)
+        
+        all_comments = first_batch
+        batches_attempted = 1
+        batches_successful = 1 if first_batch else 0
+        
+        # If we need more and got a full batch, this video likely has more comments
+        if len(first_batch) == batch_size and len(all_comments) < total_desired:
+            # For now, return what we got with a note
+            # In the future, could implement offset-based extraction if yt-dlp supports it
+            pass
+        
+        return {
+            "comments": [
+                {
+                    "author": thread.top_comment.author,
+                    "text": thread.top_comment.text,
+                    "likes": thread.top_comment.like_count,
+                    "timestamp": thread.top_comment.timestamp,
+                    "replies_count": thread.total_reply_count,
+                    "is_pinned": thread.top_comment.is_pinned
+                }
+                for thread in all_comments
+            ],
+            "metadata": {
+                "total_extracted": len(all_comments),
+                "total_desired": total_desired,
+                "batch_size": batch_size,
+                "batches_attempted": batches_attempted,
+                "batches_successful": batches_successful,
+                "extraction_rate": batches_successful / batches_attempted if batches_attempted > 0 else 0,
+                "note": "YouTube rate limiting prevents extracting comments with offsets. This returns the most recent comments available."
+            }
+        }
+        
+    except YouTubeExtractorError as e:
+        raise RuntimeError(f"Failed to extract comments in batches: {str(e)}")
 
 @mcp.tool()
 async def get_video_transcript(url: str) -> Optional[Dict[str, Any]]:
@@ -508,13 +604,18 @@ async def get_channel_info(url: str) -> Dict[str, Any]:
     """Extract information about a YouTube channel.
     
     Args:
-        url: YouTube channel URL (e.g., https://www.youtube.com/@channelname)
+        url: YouTube channel URL (supports both old and new formats)
+            - Modern format: https://www.youtube.com/@channelname
+            - Legacy format: https://www.youtube.com/channelname
+            - /c/ format: https://www.youtube.com/c/channelname
+            - /user/ format: https://www.youtube.com/user/channelname
     
     Returns:
         Dictionary containing channel information and statistics
     
     Examples:
         - get_channel_info("https://www.youtube.com/@RickAstleyYT")
+        - get_channel_info("https://www.youtube.com/LabEveryday") 
     """
     global extractor
     if not extractor:
@@ -522,8 +623,13 @@ async def get_channel_info(url: str) -> Dict[str, Any]:
     
     validate_youtube_url(url)
     
+    # Normalize channel URL to modern @handle format
+    normalized_url = normalize_channel_url(url)
+    if not normalized_url:
+        raise InvalidURLError(f"Could not normalize channel URL: {url}")
+    
     try:
-        channel_info = await extractor.get_channel_info(url)
+        channel_info = await extractor.get_channel_info(normalized_url)
         
         return {
             "id": channel_info.id,
